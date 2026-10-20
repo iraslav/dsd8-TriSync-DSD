@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# githooks/pre-push -- installed by scripts/install_hooks.sh.
+#
+# Certify before you push, not after: this mirrors the first two CI
+# jobs (lint, unit tests) locally, so a broken push is caught on your
+# own machine in seconds instead of waiting for GitHub Actions.
+# Conformance is deliberately NOT run here -- it is slower, and CI
+# already runs it on every push and comments the result on your PR.
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+echo "pre-push: running 'make lint'..."
+if ! make lint; then
+    echo "pre-push: lint failed -- push blocked. Fix the warnings above, or"
+    echo "          run 'git push --no-verify' to override (not recommended)."
+    exit 1
+fi
+
+echo "pre-push: running 'make test'..."
+if ! make test; then
+    echo "pre-push: unit tests failed -- push blocked. Fix the failures above, or"
+    echo "          run 'git push --no-verify' to override (not recommended)."
+    exit 1
+fi
+
+echo "pre-push: lint and unit tests passed."
+exit 0
