@@ -1,0 +1,14 @@
+; T24: Branch conditions taken
+LDI R0, 0x05
+LDI R1, 0x05
+CMP R0, R1
+BEQ B1
+HLT
+B1: LDI R2, 0x01
+LDI R0, 0x05
+LDI R1, 0x06
+CMP R0, R1
+BNE B2
+HLT
+B2: LDI R2, 0x02
+HLT

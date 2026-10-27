@@ -1,0 +1,13 @@
+; T36: 8-bit multiply by repeated addition (B.1)
+LDI R1, 13
+LDI R2, 7
+LDI R3, 0
+LDI R4, 1
+LOOP: LDI R5, 0
+CMP R2, R5
+BEQ DONE
+ADD R3, R3, R1
+SUB R2, R2, R4
+JMP LOOP
+DONE: OUT 0x02, R3
+HLT

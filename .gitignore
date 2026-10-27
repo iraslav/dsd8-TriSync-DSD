@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+*.vvp
+*.vcd
+*.gtkw
+sim/*.trace
+sim/waves/
+tools/iverilog/
+test_compile.vvp

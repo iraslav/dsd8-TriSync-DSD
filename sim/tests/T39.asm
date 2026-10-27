@@ -1,0 +1,24 @@
+; T39: Find maximum and minimum of block of memory
+LDI R0, 0
+LDI R1, 0x12
+ST [R0], R1
+LDI R0, 1
+LDI R1, 0x85
+ST [R0], R1
+LDI R0, 2
+LDI R1, 0x43
+ST [R0], R1
+; R1 = min, R2 = max
+LDI R0, 0
+LD R1, [R0]
+MOV R2, R1
+LDI R7, 1
+LDI R0, 1
+LD R3, [R0]
+CMP R3, R1
+BCS NOT_MIN1
+MOV R1, R3
+NOT_MIN1: CMP R3, R2
+BCC NOT_MAX1
+MOV R2, R3
+NOT_MAX1: HLT

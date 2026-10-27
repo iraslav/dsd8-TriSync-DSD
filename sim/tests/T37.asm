@@ -1,0 +1,12 @@
+; T37: Population count using SHR and carry (B.2)
+LDI R1, 0xB7
+LDI R2, 0
+LDI R3, 8
+LDI R4, 1
+LOOP: SHR R1, R1
+BCC SKIP
+ADD R2, R2, R4
+SKIP: SUB R3, R3, R4
+BNE LOOP
+OUT 0x02, R2
+HLT

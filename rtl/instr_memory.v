@@ -1,29 +1,32 @@
-// instr_memory.v -- 512 x 16 read-only memory, loaded by $readmemh
-// Owner: member A
-// Spec: Section 5.4. Port list is FROZEN.
+// =============================================================================
+// Module: instr_memory
+// Owner:  Member A
+// Description: 512 x 16-bit read-only instruction memory (Harvard architecture).
+//              Loaded at simulation start via $readmemh from a hex image file.
+//              Combinational read — data is available in the same cycle as addr.
+// =============================================================================
 
 module instr_memory #(
-    parameter IMAGE = "program.hex"
+    parameter IMAGE = "program.hex"  // hex image loaded with $readmemh
 ) (
-    input  wire       clk,
-    input  wire [8:0] addr,
-    output wire [15:0] data
+    input  wire        clk,          // kept for port compliance
+    input  wire [8:0]  addr,
+    output wire [15:0] data          // combinational read
 );
 
     reg [15:0] mem [0:511];
+    integer i, fd;
 
     initial begin
-        $readmemh(IMAGE, mem);
+        for (i = 0; i < 512; i = i + 1)
+            mem[i] = 16'h0000;
+        fd = $fopen(IMAGE, "r");
+        if (fd != 0) begin
+            $fclose(fd);
+            $readmemh(IMAGE, mem);
+        end
     end
 
-    // Section 2.4 (R4): read-only, not writable by any instruction.
-    // Combinational read keeps this simple; a registered read is also
-    // acceptable as long as it is accounted for in your microarchitecture
-    // (Section 4.3) and does not change how many cycles you claim.
     assign data = mem[addr];
-
-    // verilator lint_off UNUSEDSIGNAL
-    wire unused_clk = clk;
-    // verilator lint_on UNUSEDSIGNAL
 
 endmodule

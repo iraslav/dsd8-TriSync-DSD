@@ -1,0 +1,5 @@
+; T31: OUT to LEDS then IN from SWITCHES
+LDI R1, 0x55
+OUT 0x02, R1
+IN R2, 0x00
+HLT

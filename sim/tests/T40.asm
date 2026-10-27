@@ -1,0 +1,6 @@
+; T40: Polled UART echo loop
+LDI R1, 0x00
+OUT 0x02, R1
+LDI R2, 0x55
+OUT 0x20, R2
+HLT

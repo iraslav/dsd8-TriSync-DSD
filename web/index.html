@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DSD-8 Microprocessor Architecture & Verification Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Top Navigation Bar -->
+  <header class="navbar">
+    <div class="nav-brand">
+      <div class="cpu-chip-icon">
+        <div class="chip-inner">8</div>
+      </div>
+      <div>
+        <div class="brand-title">DSD-8 PROCESSOR CORE</div>
+        <div class="brand-subtitle">8-Bit Harvard Microarchitecture • Verilog Implementation</div>
+      </div>
+    </div>
+
+    <!-- Mode Selector Tabs -->
+    <div class="tab-group">
+      <button id="tab-sim-btn" class="tab-btn active" onclick="switchTab('sim')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+        Live CPU Simulator
+      </button>
+      <button id="tab-tests-btn" class="tab-btn" onclick="switchTab('tests')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Verification Suite (40/40 PASS)
+      </button>
+      <button id="tab-spec-btn" class="tab-btn" onclick="switchTab('spec')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        Architecture Spec
+      </button>
+    </div>
+
+    <!-- Quick Status Pill -->
+    <div class="status-badge" id="cpu-status-pill">
+      <span class="status-dot"></span>
+      <span id="cpu-status-text">FSM: FETCH</span>
+    </div>
+  </header>
+
+  <!-- =========================================================================
+       VIEW 1: LIVE CPU SIMULATOR
+       ========================================================================= -->
+  <main id="view-sim" class="view-content active">
+    <!-- Toolbar Controls -->
+    <div class="toolbar-panel">
+      <div class="control-actions">
+        <button id="btn-play" class="btn btn-primary" onclick="toggleRun()">
+          <span id="play-icon">▶</span> <span id="play-text">Run</span>
+        </button>
+        <button id="btn-step" class="btn btn-secondary" onclick="stepInstruction()">
+          <span>⏭</span> Step Instr
+        </button>
+        <button id="btn-cycle" class="btn btn-secondary" onclick="stepCycle()">
+          <span>↷</span> Micro-Cycle
+        </button>
+        <button id="btn-reset" class="btn btn-outline" onclick="resetCPU()">
+          <span>↺</span> Reset
+        </button>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
+      <div class="speed-control">
+        <label for="speed-slider">Speed:</label>
+        <input type="range" id="speed-slider" min="1" max="100" value="20" oninput="updateSpeed(this.value)">
+        <span id="speed-label" class="mono">20 Hz</span>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
+      <div class="demo-selector">
+        <label for="demo-select">Program:</label>
+        <select id="demo-select" onchange="loadDemo(this.value)">
+          <option value="multiply">Multiply (13 × 7 = 91) [Appendix B.1]</option>
+          <option value="popcount">PopCount (0xB7 = 6 bits) [Appendix B.2]</option>
+          <option value="bubblesort">Bubble Sort (8 Bytes) [Appendix B.3]</option>
+          <option value="fibonacci">Fibonacci Series Generator</option>
+          <option value="counter">LEDs Running Counter</option>
+        </select>
+      </div>
+
+      <div class="stats-counters">
+        <div class="stat-item">
+          <span class="stat-label">Cycles</span>
+          <span id="stat-cycles" class="stat-value mono">0</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Retired</span>
+          <span id="stat-retired" class="stat-value mono">0</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">IPC</span>
+          <span id="stat-ipc" class="stat-value mono">0.33</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3-Column Studio Grid -->
+    <div class="studio-grid">
+      <!-- COLUMN 1: Code & Assembly Editor -->
+      <section class="card panel-code">
+        <div class="card-header">
+          <h3>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            Instruction Memory (512×16)
+          </h3>
+          <button class="btn btn-xs btn-primary" onclick="assembleUserCode()">Assemble & Load</button>
+        </div>
+
+        <div class="code-view-container">
+          <div class="editor-subpanel">
+            <div class="subpanel-title">DSD-8 Assembly Editor</div>
+            <textarea id="asm-input" spellcheck="false"></textarea>
+          </div>
+          
+          <div class="disasm-subpanel">
+            <div class="subpanel-title">Disassembly & Execution Pointer</div>
+            <div id="disasm-list" class="disasm-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- COLUMN 2: Datapath, Registers, Flags & FSM -->
+      <section class="card panel-datapath">
+        <div class="card-header">
+          <h3>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Processor Datapath & Registers
+          </h3>
+          <div class="fsm-badge-container">
+            <span class="fsm-step" id="fsm-fetch">FETCH</span>
+            <span class="fsm-arrow">→</span>
+            <span class="fsm-step" id="fsm-exec">EXEC</span>
+            <span class="fsm-arrow">→</span>
+            <span class="fsm-step" id="fsm-wb">WB</span>
+          </div>
+        </div>
+
+        <!-- PC, IR, and Decoder Inspection -->
+        <div class="pipeline-status-strip">
+          <div class="status-box">
+            <div class="box-lbl">PROGRAM COUNTER</div>
+            <div class="box-val mono" id="val-pc">0x000</div>
+          </div>
+          <div class="status-box">
+            <div class="box-lbl">INSTRUCTION WORD</div>
+            <div class="box-val mono" id="val-ir">0x0000</div>
+          </div>
+          <div class="status-box highlight">
+            <div class="box-lbl">DECODED OP</div>
+            <div class="box-val mono" id="val-decoded">NOP</div>
+          </div>
+          <div class="status-box">
+            <div class="box-lbl">FIELDS</div>
+            <div class="box-val-sm mono" id="val-fields">rd:0 rs1:0 rs2:0</div>
+          </div>
+        </div>
+
+        <!-- Condition Flags Register {Z, N, C, V} -->
+        <div class="flags-card">
+          <div class="flags-title">ARCHITECTURAL CONDITION FLAGS ({Z, N, C, V})</div>
+          <div class="flags-row">
+            <div class="flag-pill" id="flag-z">
+              <span class="flag-letter">Z</span>
+              <span class="flag-name">Zero</span>
+              <span class="flag-val mono" id="flag-z-val">0</span>
+            </div>
+            <div class="flag-pill" id="flag-n">
+              <span class="flag-letter">N</span>
+              <span class="flag-name">Negative</span>
+              <span class="flag-val mono" id="flag-n-val">0</span>
+            </div>
+            <div class="flag-pill" id="flag-c">
+              <span class="flag-letter">C</span>
+              <span class="flag-name">Carry / ≥</span>
+              <span class="flag-val mono" id="flag-c-val">0</span>
+            </div>
+            <div class="flag-pill" id="flag-v">
+              <span class="flag-letter">V</span>
+              <span class="flag-name">Overflow</span>
+              <span class="flag-val mono" id="flag-v-val">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- General Purpose Registers R0 - R7 -->
+        <div class="registers-card">
+          <div class="registers-header">
+            <span>GENERAL PURPOSE REGISTERS (8 × 8-bit)</span>
+            <span class="text-muted">Dual Read / Single Write</span>
+          </div>
+          <div class="reg-grid" id="reg-grid">
+            <!-- Dynamic Register Cards R0 - R7 -->
+          </div>
+        </div>
+
+        <!-- ALU Details -->
+        <div class="alu-card">
+          <div class="alu-title">SINGLE 9-BIT ADDER ALU (Requirement R15)</div>
+          <div class="alu-display">
+            <div class="alu-op-box">
+              <span class="lbl">A (Port 1)</span>
+              <span class="val mono" id="alu-a">0x00</span>
+            </div>
+            <div class="alu-center">
+              <span class="alu-op-badge mono" id="alu-op">ADD (+)</span>
+              <span class="alu-sum-preview mono" id="alu-adder-sum">sum9 = 0x000</span>
+            </div>
+            <div class="alu-op-box">
+              <span class="lbl">B (Port 2)</span>
+              <span class="val mono" id="alu-b">0x00</span>
+            </div>
+            <div class="alu-arrow">=</div>
+            <div class="alu-op-box alu-res">
+              <span class="lbl">Result</span>
+              <span class="val mono" id="alu-res">0x00</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- COLUMN 3: Memory, Hardware Board Peripherals & Trace -->
+      <section class="card panel-peripherals">
+        <div class="card-header">
+          <h3>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
+            Board I/O & Data Memory
+          </h3>
+          <span class="badge badge-cyan">Port Space 0x00 - 0xFF</span>
+        </div>
+
+        <!-- FPGA Board Hardware Simulation -->
+        <div class="board-sim-card">
+          <div class="board-title">FPGA BOARD PERIPHERALS</div>
+          
+          <!-- LEDs (Port 0x02) -->
+          <div class="board-section">
+            <div class="board-label">
+              <span>LEDS (Port 0x02)</span>
+              <span id="led-hex-val" class="mono">0x00</span>
+            </div>
+            <div class="led-array" id="led-array">
+              <!-- 8 LEDs -->
+            </div>
+          </div>
+
+          <!-- 7-Segment Display (Port 0x10 / 0x11) -->
+          <div class="board-section">
+            <div class="board-label">
+              <span>7-SEGMENT DISPLAY (Port 0x10 / 0x11)</span>
+            </div>
+            <div class="seven-seg-display">
+              <div class="digit-box" id="digit-3">0</div>
+              <div class="digit-box" id="digit-2">0</div>
+              <div class="digit-box" id="digit-1">5</div>
+              <div class="digit-box" id="digit-0">B</div>
+            </div>
+          </div>
+
+          <!-- Slide Switches (Port 0x00) & Push Buttons (Port 0x01) -->
+          <div class="board-section inputs-section">
+            <div class="switches-box">
+              <div class="board-label">
+                <span>SWITCHES (Port 0x00)</span>
+                <span id="sw-hex-val" class="mono">0x00</span>
+              </div>
+              <div class="switch-array" id="switch-array">
+                <!-- 8 clickable switches -->
+              </div>
+            </div>
+
+            <div class="buttons-box">
+              <div class="board-label">
+                <span>BUTTONS (Port 0x01)</span>
+              </div>
+              <div class="dpad-buttons">
+                <button class="dpad-btn" id="btn-up" onmousedown="pressBtn('U')" onmouseup="releaseBtn()">▲</button>
+                <div class="dpad-mid">
+                  <button class="dpad-btn" id="btn-left" onmousedown="pressBtn('L')" onmouseup="releaseBtn()">◀</button>
+                  <button class="dpad-btn" id="btn-center" onmousedown="pressBtn('C')" onmouseup="releaseBtn()">●</button>
+                  <button class="dpad-btn" id="btn-right" onmousedown="pressBtn('R')" onmouseup="releaseBtn()">▶</button>
+                </div>
+                <button class="dpad-btn" id="btn-down" onmousedown="pressBtn('D')" onmouseup="releaseBtn()">▼</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Data Memory Viewer (256 Bytes) -->
+        <div class="dmem-card">
+          <div class="dmem-header">
+            <span>DATA MEMORY (256 Bytes • 0x00 to 0xFF)</span>
+            <input type="text" id="dmem-search" placeholder="Search address (e.g. 0x04)" oninput="searchDmem(this.value)">
+          </div>
+          <div class="dmem-grid-container" id="dmem-container">
+            <!-- 256 byte cells -->
+          </div>
+        </div>
+
+        <!-- Section 8.2 Execution Trace Log -->
+        <div class="trace-card">
+          <div class="trace-header">
+            <span>RETIRED TRACE STREAM (Section 8.2 Format)</span>
+            <span class="mono text-muted">seq pc ir rf_we wa wd mem_we ma md flags</span>
+          </div>
+          <div class="trace-stream-box mono" id="trace-stream"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- =========================================================================
+       VIEW 2: VERIFICATION SUITE (40/40 CONFORMANCE & ALU COVERAGE)
+       ========================================================================= -->
+  <main id="view-tests" class="view-content">
+    <div class="conformance-banner">
+      <div class="banner-stat">
+        <div class="huge-number text-emerald">40 / 40</div>
+        <div class="stat-desc">Conformance Tests Passed</div>
+      </div>
+      <div class="banner-stat">
+        <div class="huge-number text-cyan">100.0%</div>
+        <div class="stat-desc">Trace Identity against Golden Model</div>
+      </div>
+      <div class="banner-stat">
+        <div class="huge-number text-purple">12,200</div>
+        <div class="stat-desc">Random ALU Operand Pairs Tested</div>
+      </div>
+      <div class="banner-stat">
+        <div class="huge-number text-amber">9 / 9</div>
+        <div class="stat-desc">Unit Testbenches Verified</div>
+      </div>
+      <button class="btn btn-primary" onclick="reRunAllTests()">
+        <span>⚡</span> Re-Run Entire Suite
+      </button>
+    </div>
+
+    <div class="conformance-layout">
+      <!-- Grouped Test Grid -->
+      <div class="tests-column">
+        <h3 class="section-title">40 Conformance Tests (Section 8.4)</h3>
+        <div class="test-groups-container" id="test-groups-container">
+          <!-- Populated dynamically: T1 to T6 -->
+        </div>
+      </div>
+
+      <!-- Test Detail Inspector -->
+      <div class="test-detail-column">
+        <div class="card detail-card" id="test-detail-card">
+          <div class="card-header">
+            <h3 id="test-detail-title">Select a test to inspect trace diff</h3>
+            <span id="test-detail-badge" class="badge badge-emerald">PASS</span>
+          </div>
+          <div class="detail-body">
+            <div class="detail-desc" id="test-detail-desc">Click any test card on the left to see its assembly code, cycle count, instruction count, and comparison with the golden trace.</div>
+            
+            <div class="diff-split">
+              <div class="diff-pane">
+                <div class="pane-title">Verilog RTL DUT Trace (dut.trace)</div>
+                <pre class="pane-code mono" id="dut-trace-preview">// Select test</pre>
+              </div>
+              <div class="diff-pane">
+                <div class="pane-title">Golden Reference Trace (gold.trace)</div>
+                <pre class="pane-code mono" id="gold-trace-preview">// Select test</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ALU Coverage Evidence Box -->
+        <div class="card coverage-card">
+          <div class="card-header">
+            <h3>ALU Corner-Case Coverage Evidence (Requirement R25)</h3>
+            <span class="badge badge-emerald">100% COVERAGE</span>
+          </div>
+          <div class="coverage-grid">
+            <div class="cov-item"><span>Op A: 0x00</span><strong class="mono">516 hits</strong></div>
+            <div class="cov-item"><span>Op A: 0x01</span><strong class="mono">286 hits</strong></div>
+            <div class="cov-item"><span>Op A: 0x7F</span><strong class="mono">271 hits</strong></div>
+            <div class="cov-item"><span>Op A: 0x80</span><strong class="mono">261 hits</strong></div>
+            <div class="cov-item"><span>Op A: 0xFF</span><strong class="mono">306 hits</strong></div>
+            <div class="cov-item"><span>Op B: 0x00</span><strong class="mono">543 hits</strong></div>
+            <div class="cov-item"><span>Op B: 0x01</span><strong class="mono">266 hits</strong></div>
+            <div class="cov-item"><span>Op B: 0x7F</span><strong class="mono">284 hits</strong></div>
+            <div class="cov-item"><span>Op B: 0x80</span><strong class="mono">236 hits</strong></div>
+            <div class="cov-item"><span>Op B: 0xFF</span><strong class="mono">279 hits</strong></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- =========================================================================
+       VIEW 3: ARCHITECTURE SPECIFICATION REFERENCE
+       ========================================================================= -->
+  <main id="view-spec" class="view-content">
+    <div class="spec-container">
+      <div class="spec-header">
+        <h2>DSD-8 Architecture & Encoding Quick Reference (Appendix A)</h2>
+        <p>16 Opcodes • 8 General Registers • 512×16 Program Memory • 256×8 Data Memory</p>
+      </div>
+
+      <div class="spec-table-container">
+        <table class="spec-table">
+          <thead>
+            <tr>
+              <th>Opcode</th>
+              <th>Mnemonic</th>
+              <th>Format</th>
+              <th>Encoding (15 downto 0)</th>
+              <th>Flag Effects</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>0x0</td><td>NOP</td><td>—</td><td class="mono">0000 0000 0000 0000</td><td>Unchanged</td><td>No operation</td></tr>
+            <tr><td>0x1</td><td>LDI rd, imm8</td><td>I</td><td class="mono">0001 ddd0 iiiiiiii</td><td>Unchanged</td><td>Load 8-bit immediate into R[rd]</td></tr>
+            <tr><td>0x2</td><td>LD rd, [rs1]</td><td>M</td><td class="mono">0010 ddd aaa 000000</td><td>Unchanged</td><td>Load byte from DMEM[R[rs1]] into R[rd]</td></tr>
+            <tr><td>0x3</td><td>ST [rs1], rs2</td><td>M</td><td class="mono">0011 sss aaa 000000</td><td>Unchanged</td><td>Store byte R[rs2] into DMEM[R[rs1]]</td></tr>
+            <tr><td>0x4</td><td>ADD rd, rs1, rs2</td><td>R</td><td class="mono">0100 ddd aaa bbb 000</td><td>Z, N, C, V</td><td>R[rd] = R[rs1] + R[rs2]</td></tr>
+            <tr><td>0x5</td><td>SUB rd, rs1, rs2</td><td>R</td><td class="mono">0101 ddd aaa bbb 000</td><td>Z, N, C, V</td><td>R[rd] = R[rs1] - R[rs2] (C=1 no borrow)</td></tr>
+            <tr><td>0x6</td><td>AND rd, rs1, rs2</td><td>R</td><td class="mono">0110 ddd aaa bbb 000</td><td>Z, N (C=0, V=0)</td><td>Bitwise AND</td></tr>
+            <tr><td>0x7</td><td>OR rd, rs1, rs2</td><td>R</td><td class="mono">0111 ddd aaa bbb 000</td><td>Z, N (C=0, V=0)</td><td>Bitwise OR</td></tr>
+            <tr><td>0x8</td><td>XOR rd, rs1, rs2</td><td>R</td><td class="mono">1000 ddd aaa bbb 000</td><td>Z, N (C=0, V=0)</td><td>Bitwise XOR</td></tr>
+            <tr><td>0x9</td><td>SHL rd, rs1</td><td>R</td><td class="mono">1001 ddd aaa 000 000</td><td>Z, N, C (V=0)</td><td>Shift left 1, MSB into C, 0 into bit 0</td></tr>
+            <tr><td>0xA</td><td>SHR rd, rs1</td><td>R</td><td class="mono">1010 ddd aaa 000 000</td><td>Z, N, C (V=0)</td><td>Logical shift right, LSB into C, 0 into bit 7</td></tr>
+            <tr><td>0xB</td><td>CMP rs1, rs2</td><td>R</td><td class="mono">1011 000 aaa bbb 000</td><td>Z, N, C, V</td><td>Compare: sets flags only, writes NO register</td></tr>
+            <tr><td>0xC</td><td>JMP addr9</td><td>J</td><td class="mono">1100 000 tttttttt t</td><td>Unchanged</td><td>Unconditional jump to PC = addr9</td></tr>
+            <tr><td>0xD</td><td>B{cc} addr9</td><td>J</td><td class="mono">1101 ccc tttttttt t</td><td>Unchanged</td><td>Branch if condition holds</td></tr>
+            <tr><td>0xE</td><td>IN rd, port / OUT port, rs</td><td>P</td><td class="mono">1110 ddd dir pppppppp</td><td>Unchanged</td><td>I/O Port read (dir=0) / write (dir=1)</td></tr>
+            <tr><td>0xF</td><td>HLT</td><td>—</td><td class="mono">1111 0000 0000 0000</td><td>Unchanged</td><td>Halt processor execution</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

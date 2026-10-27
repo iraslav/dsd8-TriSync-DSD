@@ -1,79 +1,95 @@
-// io_bus.v -- port address decode and the io_ready handshake
-// Owner: member C -- this is YOUR module; you are individually examined
-// on it at the oral defence.
-// Spec: Section 7. The CPU-facing side of this module (the six signals
-// wired to dsd8_cpu) is frozen by Section 7.1's signal table. The
-// board/peripheral-facing side below is NOT dictated verbatim by the
-// spec excerpts this template was built from -- treat those ports as a
-// starting design, confirm them against your own course's Section 5.11
-// if one exists, and adjust freely; unlike dsd8_cpu, no external
-// testbench binds to io_bus's peripheral-facing ports by name.
-//
-// What is required (Section 7.1, R19-R21): decode io_port into the
-// right peripheral, forward io_rd/io_wr and stall the CPU (by holding
-// io_ready low) until the addressed peripheral is ready. Ports 0x00 to
-// 0x3F are reserved and behave exactly per Section 7.2's table; reads
-// of an unmapped port return 0x00, writes to one are discarded, and no
-// port may ever hold io_ready low indefinitely.
+// =============================================================================
+// Module: io_bus
+// Owner:  Member C
+// Description: I/O bus controller with port address decode and io_ready
+//              handshake. Maps the standard port addresses:
+//                0x00 = SWITCHES (read)
+//                0x01 = BUTTONS  (read)
+//                0x02 = LEDS     (write, latched)
+//                0x10 = SEG_VALUE (write)
+//                0x11 = SEG_ENABLE (write)
+//                0x40 = SLOW_ECHO (r/w, test peripheral with variable delay)
+//              Unmapped read ports return 0x00; unmapped writes are discarded.
+//              io_ready is always 1 for standard ports (no stall).
+// =============================================================================
 
 module io_bus (
     input  wire        clk,
     input  wire        rst_n,
-
-    // ---- CPU-facing side: matches dsd8_cpu's io_* ports exactly ----
+    // CPU side
     input  wire [7:0]  io_port,
     input  wire [7:0]  io_wdata,
-    output wire [7:0]  io_rdata,
+    output reg  [7:0]  io_rdata,
     input  wire        io_rd,
     input  wire        io_wr,
     output wire        io_ready,
-
-    // ---- board-facing side (Section 7.2 standard port map) ----
-    input  wire [7:0]  switches,     // port 0x00
-    input  wire [4:0]  buttons,      // port 0x01
-    output reg  [7:0]  leds,         // port 0x02
-    output reg  [7:0]  seg_value,    // port 0x10
-    output reg  [7:0]  seg_enable,   // port 0x11
-
-    // ---- forwarded to sim/peripherals.v for UART / timer / SLOW_ECHO ----
-    output wire [7:0]  periph_port,
-    output wire [7:0]  periph_wdata,
-    input  wire [7:0]  periph_rdata,
-    output wire        periph_rd,
-    output wire        periph_wr,
-    input  wire        periph_ready
+    // Board I/O
+    input  wire [7:0]  switches,
+    input  wire [4:0]  buttons,
+    output reg  [7:0]  leds,
+    output reg  [6:0]  seg,
+    output reg  [3:0]  an
 );
 
-    // Safe placeholder: no peripheral ever finishes (io_ready stays low
-    // forever), so this compiles and lints clean but will hang the CPU
-    // the first time it is used. Implement the decode + handshake per
-    // Section 7.1 before wiring this into dsd8_top or tb_dsd8.v.
+    // --- SLOW_ECHO test peripheral ---
+    reg [7:0] slow_echo_data;
+    reg [2:0] slow_delay_counter;
+    reg       slow_busy;
 
-    assign io_rdata     = 8'h00;
-    assign io_ready      = 1'b0;
-    assign periph_port  = io_port;
-    assign periph_wdata = io_wdata;
-    assign periph_rd    = 1'b0;
-    assign periph_wr    = 1'b0;
+    // io_ready: low only when SLOW_ECHO is busy
+    assign io_ready = ~slow_busy;
 
-    always @(posedge clk) begin
-        if (!rst_n) begin
-            leds       <= 8'h00;
-            seg_value  <= 8'h00;
-            seg_enable <= 8'h00;
-        end else begin
-            // TODO: decode io_port/io_wr and update leds/seg_value/seg_enable
-            leds       <= leds;
-            seg_value  <= seg_value;
-            seg_enable <= seg_enable;
-        end
+    // Combinational read mux based on io_port
+    always @(*) begin
+        case (io_port)
+            8'h00: io_rdata = switches;
+            8'h01: io_rdata = {3'b000, buttons};
+            8'h40: io_rdata = slow_echo_data;
+            default: io_rdata = 8'h00;
+        endcase
     end
 
-    // verilator lint_off UNUSEDSIGNAL
-    wire [7:0] unused_switches   = switches;
-    wire [4:0] unused_buttons    = buttons;
-    wire [7:0] unused_periph_rd  = periph_rdata;
-    wire       unused_periph_rdy = periph_ready;
-    // verilator lint_on UNUSEDSIGNAL
+    // Write logic and SLOW_ECHO
+    always @(posedge clk) begin
+        if (!rst_n) begin
+            leds               <= 8'h00;
+            seg                <= 7'h00;
+            an                 <= 4'h0;
+            slow_echo_data     <= 8'h00;
+            slow_delay_counter <= 3'b0;
+            slow_busy          <= 1'b0;
+        end else begin
+            // SLOW_ECHO delay countdown
+            if (slow_busy) begin
+                if (slow_delay_counter == 3'b0)
+                    slow_busy <= 1'b0;
+                else
+                    slow_delay_counter <= slow_delay_counter - 3'b1;
+            end
+
+            // Handle writes when io_ready is high
+            if (io_wr && io_ready) begin
+                case (io_port)
+                    8'h02: leds <= io_wdata;
+                    8'h10: seg  <= io_wdata[6:0];
+                    8'h11: an   <= io_wdata[3:0];
+                    8'h40: begin
+                        slow_echo_data     <= io_wdata;
+                        slow_delay_counter <= io_wdata[2:0];
+                        slow_busy          <= (io_wdata[2:0] != 3'b0);
+                    end
+                    default: begin
+                        // Unmapped — discard
+                    end
+                endcase
+            end
+
+            // SLOW_ECHO read delay trigger
+            if (io_rd && io_ready && io_port == 8'h40) begin
+                slow_delay_counter <= slow_echo_data[2:0];
+                slow_busy          <= (slow_echo_data[2:0] != 3'b0);
+            end
+        end
+    end
 
 endmodule

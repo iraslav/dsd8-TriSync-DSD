@@ -1,0 +1,11 @@
+; T15: ADD across carry boundary
+LDI R0, 0xFF
+LDI R1, 0x01
+ADD R2, R0, R1 ; 0xFF + 1 = 0x00, C=1, Z=1
+LDI R0, 0x80
+LDI R1, 0x80
+ADD R3, R0, R1 ; 0x80 + 0x80 = 0x00, C=1, V=1, Z=1
+LDI R0, 0x7F
+LDI R1, 0x01
+ADD R4, R0, R1 ; 0x7F + 1 = 0x80, V=1, N=1
+HLT
