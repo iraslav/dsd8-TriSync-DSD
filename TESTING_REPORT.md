@@ -2,7 +2,7 @@
 
 **Project:** DSD-8 Processor — TrySync
 **Verification date:** 2026-11-03
-**Repository state tested:** Current working tree, including pre-existing local changes. No RTL or testbench source was edited for this verification.
+**Verification update:** Testing infrastructure fixes were verified on 2026-11-03. Processor RTL, expected results, and golden traces were not modified.
 
 ## A. Project Overview
 
@@ -26,45 +26,37 @@ The bundled Icarus executables were not on `PATH`. Direct execution of the proje
 
 ## C. Test Results
 
-**Unique test-case totals:** **56 passed, 0 behavioral assertion failures, 1 blocked** (`tb_alu_example.v`, compile failure). Runner-level failures are listed separately below and are not counted as RTL assertion failures.
+**This verification run:** **54 passed, 0 failed, 0 blocked** (12 module/testbench tests, 40 baseline conformance cases, and 2 additional conformance programs). RTL lint also passed.
 
 | Test Name | Execution Status | Result | Details |
 |---|---|---|---|
-| `tb_alu.v` — ALU directed unit test | Executed | PASS | All eight ALU operations passed. |
-| `tb_alu_random.v` — ALU constrained-random test | Executed | PASS | 12,200 vectors; zero mismatches; all documented corner operands covered. |
-| `tb_prog_counter.v` — program counter | Executed | PASS | Included in the 9/9 baseline unit suite. |
-| `tb_register_file.v` — register file | Executed | PASS | Included in the 9/9 baseline unit suite. |
-| `tb_flags_reg.v` — flags register | Executed | PASS | Included in the 9/9 baseline unit suite. |
-| `tb_instr_decoder.v` — instruction decoder | Executed | PASS | Included in the 9/9 baseline unit suite. |
-| `tb_data_memory.v` — data memory | Executed | PASS | Included in the 9/9 baseline unit suite. |
-| `tb_control_unit.v` — control unit | Executed | PASS | Included in the 9/9 baseline unit suite. |
-| `tb_io_bus.v` — standard I/O bus | Executed | PASS | Included in the 9/9 baseline unit suite. |
-| Baseline module unit suite (`scripts/run_all.py`) | Executed | PASS — 9/9 | All unit tests selected by the master runner passed. |
-| Processor conformance T01–T40 | Executed | PASS — 40/40 | DUT retirement traces matched golden traces. T30 completed 772 instructions; T36–T38 exercised multiply, population count, and bubble sort. |
-| `tests/conformance/sample01_multiply.asm` | Executed | PASS | Corrected runtime-argument invocation produced an exact RTL/reference trace match; 51 retired instructions. |
-| `tests/conformance/sample02_popcount.asm` | Executed | PASS | Corrected runtime-argument invocation produced an exact RTL/reference trace match; 44 retired instructions. |
-| `sim/multiply.asm` | Executed | PASS | Assembled, reference-simulated, and RTL trace matched; 51 retired instructions. |
-| `sim/popcount.asm` | Executed | PASS | Assembled, reference-simulated, and RTL trace matched; 44 retired instructions. |
-| `sim/bubblesort.asm` | Executed | PASS | Assembled, reference-simulated, and RTL trace matched; 478 retired instructions. |
-| `tb_interrupt_controller.v` — Timer A/B, flags, masking, priority, event/manual sources | Executed | PASS | Self-checking testbench completed without errors. |
-| `sim/interrupt_smoke.asm` + `tb_dsd8_interrupt_top.v` | Executed | PASS | CPU polled Timer A, wrote `0xA5` to LEDs, cleared the flag, and halted; integration test reported 48 cycles. The existing smoke image matched a fresh assembly. |
-| `tb_alu_example.v` — worked ALU testbench | Attempted | BLOCKED | Icarus reports a syntax error at line 89 (`expected_result(...)[7]`) in both `-g2005` and `-g2012` modes. No test result was produced. |
-| `make lint` | Executed | PASS | All RTL files compiled in Icarus null-target syntax mode; zero errors. |
-| `scripts/run_unit_tests.py` as shipped | Executed | FAIL — runner | Reports 0/12 because it requires `TESTBENCH: PASS/FAIL`; 11 launched benches instead print other `PASS`/`STATUS: PASS` forms. The remaining `tb_alu_example.v` fails compilation. The master runner and the focused tests independently verified the applicable testbenches. |
-| `scripts/run_conformance.py` as shipped | Executed | FAIL — runner | Both sample programs assembled and reference-simulated, but DUT compilation fails because the script uses `-P...IMAGE` and `-P...TRACE_FILE` parameters that the current `tb_dsd8` does not define. Compiling it and supplying its documented runtime `+IMAGE`/`+TRACE` arguments passed both comparisons. |
-| `scripts/run_all.py` using the original absolute workspace path | Executed | FAIL — path/tool interaction | Icarus’s Windows launcher split the path at `E:\University\BE-CSE`. Re-running the same suite from the temporary `R:` alias passed all 9 unit tests and all 40 conformance tests. |
+| `tb_alu.v` — directed ALU test | Executed | PASS | All directed ALU checks passed. |
+| `tb_alu_random.v` — ALU random test | Executed | PASS | 12,200 vectors; zero mismatches and all documented corner operands covered. |
+| `tb_alu_example.v` — worked ALU example | Executed | PASS | Compiled with `-g2012`; direct function-result indexing was replaced with a local 8-bit value and bit-select. Original vectors and expected results are unchanged. |
+| `tb_control_unit.v` | Executed | PASS | Control and branch checks passed. |
+| `tb_data_memory.v` | Executed | PASS | Data memory checks passed. |
+| `tb_dsd8_interrupt_top.v` | Executed | PASS | Polling add-on integration test passed. |
+| `tb_flags_reg.v` | Executed | PASS | Flag register checks passed. |
+| `tb_instr_decoder.v` | Executed | PASS | Instruction decode checks passed. |
+| `tb_interrupt_controller.v` | Executed | PASS | Timer, flags, masking, and priority checks passed. |
+| `tb_io_bus.v` | Executed | PASS | Standard I/O checks passed. |
+| `tb_prog_counter.v` | Executed | PASS | Program counter checks passed. |
+| `tb_register_file.v` | Executed | PASS | Register file checks passed. |
+| Unit runner (`scripts/run_unit_tests.py`) | Executed | PASS — 12/12 | Correctly recognized the different bench verdict formats; zero compilation/runtime failures or blocked benches. |
+| Baseline conformance T01–T40 | Executed | PASS — 40/40 | DUT traces matched the baseline suite’s golden traces. |
+| `sample01_multiply.asm` | Executed | PASS | DUT trace matched the generated golden reference trace; 51 retired instructions. |
+| `sample02_popcount.asm` | Executed | PASS | DUT trace matched the generated golden reference trace; 44 retired instructions. |
+| Conformance runner (`scripts/run_conformance.py`) | Executed | PASS — 2/2 | Uses the testbench’s `+IMAGE` and `+TRACE` runtime plusargs and compares traces. |
+| `make lint` | Executed | PASS | Icarus syntax check of all RTL modules; zero errors. |
 
-The 56 passing cases comprise 9 module tests, 40 baseline conformance programs, 2 add-on tests, 2 additional conformance samples, and 3 repository worked examples. Repeated executions through the discovery runner are not counted again.
+Test-case totals count each bench/program once: 12 unit/integration benches + 40 baseline cases + 2 additional sample programs = **54 PASS, 0 FAIL, 0 BLOCKED**. `make lint` is a separate successful check.
 
 ## D. Errors and Warnings
 
-- **Workspace path with spaces:** The first `scripts/run_all.py` invocation failed at Icarus compilation because of the absolute Windows path. The alias-based rerun completed successfully; this was not an RTL failure.
-- **Unit-test discovery mismatch:** `scripts/run_unit_tests.py` expects output markers documented in [tb/README.md](./tb/README.md), but most current benches use different PASS strings. The runner consequently labels successful simulations as errors. It also discovers `tb_alu_example.v`, which does not compile under the bundled Icarus in either tested language mode.
-- **Conformance runner mismatch:** `scripts/run_conformance.py` still uses compile-time parameter overrides, while [tb/tb_dsd8.v](./tb/tb_dsd8.v) reads the image and trace paths from `+IMAGE` and `+TRACE` runtime plusargs. The manual runtime-argument flow passed both sample comparisons.
-- **Non-fatal simulator warnings:** The short assembled images produce `$readmemh` “Not enough words” warnings because the harness has 512 instruction slots; the harness initializes the remaining slots before loading each image. Add-on waveform runs also emit Icarus’s non-fatal “Package ($unit) is not dumpable with VCD” warning.
-- **GTKWave:** VCDs and `.gtkw` save files were generated. GTKWave was not launched, and no visual waveform inspection is claimed.
-- **Interrupt test launcher:** `run_interrupt_tests.py` was not launched as a wrapper because it automatically starts GTKWave. Its assembly, controller test, integration test, and waveform-generation steps were run directly without opening the GUI.
-- **Missing dependencies:** None for the executed tests. No software was installed.
+- **Initial syntax issue fixed:** Icarus does not accept a bit-select applied directly to a function-call result in this context. `expected_overflow` now stores the function result in a local `reg [7:0]` before selecting bit 7.
+- **Path with spaces:** The bundled Windows Icarus launcher does not accept this workspace’s original spaced absolute path. Tests were run from a temporary `R:` `subst` alias; both Python runners preserve that alias when locating the repository root.
+- **Test runner fixes:** The unit runner recognizes `PASS: <testbench>`, `STATUS: PASS`, and `TESTBENCH: PASS`; it reports compilation/no-verdict cases as BLOCKED, runtime/assertion errors as FAIL, and returns nonzero for either. The conformance runner now supplies `+IMAGE` and `+TRACE` at simulation time and compares DUT and golden traces.
+- **Warnings/errors in requested verification:** None after the fixes. No dependencies were installed. Waveform GUI inspection and synthesis were not part of this infrastructure-fix verification.
 
 ## E. Integration Verification
 
@@ -78,7 +70,7 @@ The standard I/O, data memory, register file, control unit, ALU, and processor e
 
 ## F. Waveform Results
 
-Waveform generation succeeded. The full regression generated/updated **49 baseline pairs** (9 unit testbenches and T01–T40). Additional focused pairs were generated for the controller, CPU/add-on integration, and the three worked programs. The current [sim/waves/](./sim/waves/) directory contains 57 VCD files and 57 GTKWave save files, including pairs that were already present before this verification.
+Earlier verification generated the waveform pairs listed below. This testing-infrastructure run did not regenerate waveforms or open GTKWave; it ran the unit suite without VCD capture and baseline conformance with waves disabled. Existing [sim/waves/](./sim/waves/) files were left unchanged.
 
 New focused waveform names:
 
@@ -106,8 +98,6 @@ The generated add-on `.gtkw` files select top-level testbench signals by default
 
 ### Important improvements
 
-- Align `scripts/run_unit_tests.py` with the PASS formats actually emitted by the current benches, and resolve or replace the uncompilable `tb_alu_example.v`.
-- Update `scripts/run_conformance.py` to use the current `tb_dsd8` runtime plusargs.
 - Reconcile older interrupt documents with the RTL: [Timer_Counter_Interrupt_Specification.md](./Timer_Counter_Interrupt_Specification.md) describes the vector base as driving CPU handler-address calculation and labels `0x5A` write-only; [Interrupt_Quick_Reference.md](./Interrupt_Quick_Reference.md) also labels `0x5A` write-only and describes status bit 4 as any active flag. In RTL, `0x5A` is read/write, bit 4 means an **enabled** pending source, and the CPU does not vector. [Interrupt_Implementation_Roadmap.md](./Interrupt_Implementation_Roadmap.md) describes integration into `dsd8_top`, while the implementation uses the separate `dsd8_interrupt_top` wrapper. The newer [final.md](./final.md) and [doc/interrupt_addon.md](./doc/interrupt_addon.md) describe the polling behavior accurately.
 - Add direct coverage for the baseline `dsd8_top` and `instr_memory`, timer 16-bit boundary/wrap behavior, additional mode/configuration combinations, and a multi-source software dispatcher if that is a project requirement.
 - Run synthesis or FPGA implementation checks in the intended hardware toolchain; this verification covered simulation and RTL syntax only.
@@ -119,92 +109,34 @@ The generated add-on `.gtkw` files select top-level testbench signals by default
 
 ## H. Final Assessment
 
-**Partially verified.** The baseline module suite and all 40 processor conformance tests passed, and the timer controller, polling integration, sample programs, and RTL syntax check passed. However, the generic test runner and sample conformance runner are inconsistent with current testbench interfaces, one available example testbench does not compile, several older documents overstate vectoring behavior, and neither GTKWave visual inspection nor synthesis/hardware verification was performed.
+**The requested testing-infrastructure verification passed:** 12/12 unit/integration benches, 40/40 baseline conformance cases, and 2/2 additional conformance samples passed; `make lint` passed. No processor RTL, architecture, expected result, or golden trace was changed. Remaining work includes the documentation/coverage items above and verification outside this task, such as synthesis or visual GTKWave inspection.
 
 ## Commands Executed
 
-Commands below are shown relative to the repository root unless noted. Icarus-dependent commands were run from a temporary `R:` alias for the workspace to avoid the path-with-spaces launcher issue.
+The bundled Windows Icarus launcher does not work with this repository’s original absolute path containing spaces. Commands were run from a temporary `R:` alias. From PowerShell:
 
 ```powershell
-python scripts/run_all.py
 subst R: "E:\University\BE-CSE Vll\DSD\Project DSD"
-# From R:\, with the bundled Icarus bin directory added to PATH:
-$env:PATH = "R:\tools\iverilog\app\bin;$env:PATH"
-python scripts/run_all.py
+Push-Location R:\
+New-Item -ItemType Directory -Force -Path build\unit | Out-Null
+tools\iverilog\app\bin\iverilog.exe -g2012 -s tb_alu_example -o build\unit\tb_alu_example_explicit.vvp tb\tb_alu_example.v rtl\alu.v
+tools\iverilog\app\bin\vvp.exe build\unit\tb_alu_example_explicit.vvp
 python scripts/run_unit_tests.py
 python scripts/run_conformance.py
+python -c "import sys; sys.path.insert(0,'.'); from scripts.run_all import run_conformance_suite; sys.exit(0 if run_conformance_suite(with_waves=False) else 1)"
 make lint
+python -m py_compile scripts\run_unit_tests.py scripts\run_conformance.py
+python -c "import sys; sys.path.insert(0,'scripts'); from run_unit_tests import classify_output; cases=[('PASS: tb_alu passed all unit checks!','tb_alu',0,'PASS'),('STATUS: PASS (vectors verified)','tb_alu_random',0,'PASS'),('FAIL R21: mismatch','tb_io_bus',0,'FAIL'),('TESTBENCH: PASS','tb_alu_example',1,'FAIL'),('simulator emitted no verdict','tb_alu',0,'BLOCKED')]; results=[classify_output(out,name,code)[0] for out,name,code,_ in cases]; print(list(zip(results,[expected for _,_,_,expected in cases]))); raise SystemExit(0 if results==[expected for _,_,_,expected in cases] else 1)"
+Pop-Location
+subst R: /d
 ```
 
-The following focused commands were also run from `R:\`:
-
-```powershell
-python dsd8asm.py sim\interrupt_smoke.asm -o sim\interrupt_smoke_verified.hex
-tools\iverilog\app\bin\iverilog.exe -g2012 -s tb_interrupt_controller -o sim\verified_tb_interrupt_controller.vvp tb\tb_interrupt_controller.v rtl\interrupt_controller.v
-tools\iverilog\app\bin\vvp.exe sim\verified_tb_interrupt_controller.vvp +VCD=sim/waves/verified_interrupt_controller.vcd
-$rtl = Get-ChildItem rtl -Filter '*.v' -File | Sort-Object Name | ForEach-Object { $_.FullName }
-tools\iverilog\app\bin\iverilog.exe -g2012 -s tb_dsd8_interrupt_top -o sim\verified_tb_dsd8_interrupt_top.vvp @rtl tb\tb_dsd8_interrupt_top.v
-tools\iverilog\app\bin\vvp.exe sim\verified_tb_dsd8_interrupt_top.vvp +VCD=sim/waves/verified_dsd8_interrupt_top.vcd
-tools\iverilog\app\bin\iverilog.exe -g2012 -s tb_alu_example -o sim\verified_tb_alu_example.vvp tb\tb_alu_example.v rtl\alu.v
-```
-
-For the two `tests\conformance` programs, `tb/tb_dsd8.v` was compiled with the following RTL dependencies and then run with its runtime arguments:
-
-```powershell
-python tools\dsd8asm.py tests\conformance\sample01_multiply.asm -o build\conformance\sample01_multiply.hex
-python tools\dsd8sim.py build\conformance\sample01_multiply.hex --trace build\conformance\sample01_multiply.gold.trace
-python tools\dsd8asm.py tests\conformance\sample02_popcount.asm -o build\conformance\sample02_popcount.hex
-python tools\dsd8sim.py build\conformance\sample02_popcount.hex --trace build\conformance\sample02_popcount.gold.trace
-$sources = @('rtl/dsd8_cpu.v','rtl/prog_counter.v','rtl/instr_memory.v','rtl/instr_decoder.v','rtl/register_file.v','rtl/alu.v','rtl/flags_reg.v','rtl/data_memory.v','rtl/control_unit.v','rtl/io_bus.v','sim/peripherals.v','tb/tb_dsd8.v')
-tools\iverilog\app\bin\iverilog.exe -g2005 -o build\conformance\sample_harness.vvp @sources
-tools\iverilog\app\bin\vvp.exe build\conformance\sample_harness.vvp +IMAGE=build/conformance/sample01_multiply.hex +TRACE=build/conformance/sample01_multiply.dut.trace
-tools\iverilog\app\bin\vvp.exe build\conformance\sample_harness.vvp +IMAGE=build/conformance/sample02_popcount.hex +TRACE=build/conformance/sample02_popcount.dut.trace
-```
-
-Each DUT trace was compared with its `.gold.trace` using this normalization and equality check (with the corresponding sample name substituted):
-
-```powershell
-python -c "from pathlib import Path; a=[x.strip().upper() for x in Path('build/conformance/sample01_multiply.dut.trace').read_text().splitlines() if x.strip()]; b=[x.strip().upper() for x in Path('build/conformance/sample01_multiply.gold.trace').read_text().splitlines() if x.strip()]; print('sample01_multiply RTL trace comparison:', 'PASS' if a==b else 'FAIL', 'DUT lines=',len(a),'gold lines=',len(b)); raise SystemExit(0 if a==b else 1)"
-python -c "from pathlib import Path; a=[x.strip().upper() for x in Path('build/conformance/sample02_popcount.dut.trace').read_text().splitlines() if x.strip()]; b=[x.strip().upper() for x in Path('build/conformance/sample02_popcount.gold.trace').read_text().splitlines() if x.strip()]; print('sample02_popcount RTL trace comparison:', 'PASS' if a==b else 'FAIL', 'DUT lines=',len(a),'gold lines=',len(b)); raise SystemExit(0 if a==b else 1)"
-```
-
-The three `sim\` worked examples were run in a PowerShell loop, assembling, reference-simulating, executing against the same `tb_dsd8` harness, producing a VCD, and comparing DUT/golden traces:
-
-```powershell
-foreach ($name in @('multiply','popcount','bubblesort')) {
-    python tools\dsd8asm.py "sim\$name.asm" -o "build\verification_samples_20261103\$name.hex"
-    python tools\dsd8sim.py "build\verification_samples_20261103\$name.hex" --trace "build\verification_samples_20261103\$name.gold.trace"
-    tools\iverilog\app\bin\vvp.exe "build\verification_samples_20261103\sample_harness.vvp" "+IMAGE=build/verification_samples_20261103/$name.hex" "+TRACE=build/verification_samples_20261103/$name.dut.trace" "+VCD=sim/waves/sample_$name.vcd"
-}
-```
-
-Before that loop, the shared worked-example harness was compiled with:
-
-```powershell
-$sources = @('rtl/dsd8_cpu.v','rtl/prog_counter.v','rtl/instr_memory.v','rtl/instr_decoder.v','rtl/register_file.v','rtl/alu.v','rtl/flags_reg.v','rtl/data_memory.v','rtl/control_unit.v','rtl/io_bus.v','sim/peripherals.v','tb/tb_dsd8.v')
-tools\iverilog\app\bin\iverilog.exe -g2005 -o build\verification_samples_20261103\sample_harness.vvp @sources
-```
-
-The traces were compared after each run using normalized line equality:
-
-```powershell
-python -c "from pathlib import Path; import sys; a=[x.strip().upper() for x in Path('$outdir/$name.dut.trace').read_text().splitlines() if x.strip()]; b=[x.strip().upper() for x in Path('$outdir/$name.gold.trace').read_text().splitlines() if x.strip()]; print('$name trace comparison:', 'PASS' if a==b else 'FAIL', 'retired instructions=',len(a)); raise SystemExit(0 if a==b else 1)"
-python -c "import sys; sys.path.insert(0,'scripts'); import run_wave; run_wave.make_savefile_for('sim/waves/sample_$name.vcd','tb_dsd8')"
-```
-
-The add-on `.gtkw` files were generated with:
-
-```powershell
-python -c "import sys; sys.path.insert(0,'scripts'); import run_wave; print(run_wave.make_savefile_for('sim/waves/verified_interrupt_controller.vcd','tb_interrupt_controller')); print(run_wave.make_savefile_for('sim/waves/verified_dsd8_interrupt_top.vcd','tb_dsd8_interrupt_top'))"
-```
-
-GTKWave itself was not opened.
+The unit runner executed the directed, random, and example ALU tests along with every other `tb_*.v` unit/integration bench. The additional sample runner assembled both samples and compared their DUT traces with generated golden traces. The baseline suite was run through `run_conformance_suite(with_waves=False)` to avoid modifying waveforms.
 
 ## Generated Files
 
-- `TESTING_REPORT.md`
-- Baseline waveform outputs under `sim/waves/`: 9 unit-test VCD/GTKWave pairs and 40 conformance VCD/GTKWave pairs.
-- Focused waveform outputs listed in Section F.
-- Test-runner build products and traces were written under `build/` and `sim/`. Temporary `build/` products, the duplicate `sim/interrupt_smoke_verified.hex`, and focused `.vvp` files were removed after verification; the waveforms were retained.
+- Modified files: `tb/tb_alu_example.v`, `scripts/run_unit_tests.py`, `scripts/run_conformance.py`, and `TESTING_REPORT.md`.
+- The runners created temporary `.vvp`, `.hex`, and trace files under `build/`; these outputs were removed after verification.
+- No waveform files were generated or changed during this run. Existing waveform outputs from earlier project verification were retained.
 
-The pre-existing `sim/interrupt_smoke.hex` was not overwritten; it was compared with a freshly assembled image and matched. No project RTL, testbench, assembler, or documentation source was modified for this task.
+No RTL, processor architecture, expected result, golden trace, or unrelated worktree file was modified.

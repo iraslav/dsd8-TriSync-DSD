@@ -18,12 +18,13 @@ Usage:
     python3 scripts/run_conformance.py sample01_multiply # one test, by stem
 """
 import argparse
+import os
 import pathlib
 import shutil
 import subprocess
 import sys
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+REPO_ROOT = pathlib.Path(os.path.abspath(__file__)).parent.parent
 TOOLS = REPO_ROOT / "tools"
 RTL = REPO_ROOT / "rtl"
 TB = REPO_ROOT / "tb" / "tb_dsd8.v"
@@ -44,7 +45,9 @@ class ToolNotFound(Exception):
 
 def run(cmd, **kwargs):
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, **kwargs)
+        return subprocess.run(
+            cmd, capture_output=True, text=True, cwd=REPO_ROOT, **kwargs
+        )
     except FileNotFoundError as e:
         raise ToolNotFound(
             f"'{cmd[0]}' is not installed or not on PATH ({e}). "
@@ -56,13 +59,25 @@ def assemble_and_simulate_gold(asm_path, work_dir):
     hex_path = work_dir / (asm_path.stem + ".hex")
     gold_path = work_dir / (asm_path.stem + ".gold.trace")
 
-    r = run([sys.executable, str(TOOLS / "dsd8asm.py"), str(asm_path), "-o", str(hex_path)])
+    r = run([
+        sys.executable, str(TOOLS / "dsd8asm.py"),
+        str(asm_path.relative_to(REPO_ROOT)), "-o",
+        str(hex_path.relative_to(REPO_ROOT)),
+    ])
     if r.returncode != 0:
         return None, None, f"assembler failed:\n{r.stdout}{r.stderr}"
+    if not hex_path.is_file():
+        return None, None, f"assembler did not create the image: {hex_path}"
 
-    r = run([sys.executable, str(TOOLS / "dsd8sim.py"), str(hex_path), "--trace", str(gold_path)])
+    r = run([
+        sys.executable, str(TOOLS / "dsd8sim.py"),
+        str(hex_path.relative_to(REPO_ROOT)), "--trace",
+        str(gold_path.relative_to(REPO_ROOT)),
+    ])
     if r.returncode != 0:
         return None, None, f"golden simulator failed:\n{r.stdout}{r.stderr}"
+    if not gold_path.is_file() or gold_path.stat().st_size == 0:
+        return None, None, f"reference simulator did not create a non-empty trace: {gold_path}"
 
     return hex_path, gold_path, None
 
@@ -71,25 +86,43 @@ def compile_and_simulate_dut(hex_path, work_dir, test_name):
     dut_trace = work_dir / (test_name + ".dut.trace")
     sim_bin = work_dir / (test_name + ".vvp")
 
-    sources = [str(RTL / f) for f in RTL_SOURCES] + [str(PERIPHERALS), str(TB)]
+    sources = [RTL / f for f in RTL_SOURCES] + [PERIPHERALS, TB]
     for src in sources:
         if not pathlib.Path(src).exists():
             return None, f"missing source file: {src}"
 
     compile_cmd = [
-        "iverilog", "-g2005", "-o", str(sim_bin),
-        f"-Ptb_dsd8.imem.IMAGE=\"{hex_path}\"",
-        f"-Ptb_dsd8.TRACE_FILE=\"{dut_trace}\"",
-    ] + sources
+        find_tool("iverilog"), "-g2005", "-o",
+        str(sim_bin.relative_to(REPO_ROOT)),
+    ] + [str(src.relative_to(REPO_ROOT)) for src in sources]
     r = run(compile_cmd)
     if r.returncode != 0:
         return None, f"iverilog compile failed:\n{r.stdout}{r.stderr}"
 
-    r = run(["vvp", str(sim_bin)])
+    if dut_trace.exists():
+        dut_trace.unlink()
+
+    r = run([
+        find_tool("vvp"), str(sim_bin.relative_to(REPO_ROOT)),
+        f"+IMAGE={hex_path.relative_to(REPO_ROOT)}",
+        f"+TRACE={dut_trace.relative_to(REPO_ROOT)}",
+    ])
     if r.returncode != 0:
         return None, f"vvp simulation failed:\n{r.stdout}{r.stderr}"
+    if not dut_trace.is_file() or dut_trace.stat().st_size == 0:
+        return None, f"vvp did not create a non-empty DUT trace:\n{r.stdout}{r.stderr}"
 
     return dut_trace, None
+
+
+def find_tool(name):
+    bundled = REPO_ROOT / "tools" / "iverilog" / "app" / "bin" / f"{name}.exe"
+    if bundled.is_file():
+        return str(bundled)
+    tool = shutil.which(name)
+    if tool is None:
+        raise ToolNotFound(f"'{name}' is not installed or not on PATH.")
+    return tool
 
 
 def first_diff(gold_path, dut_path):
@@ -123,11 +156,12 @@ def main():
         print(f"no test programs found under {TESTS_DIR}", file=sys.stderr)
         sys.exit(2)
 
-    for tool in ("iverilog", "vvp"):
-        if shutil.which(tool) is None:
-            print(f"error: '{tool}' is not installed or not on PATH.", file=sys.stderr)
-            print("Install Icarus Verilog first, e.g.: sudo apt-get install iverilog", file=sys.stderr)
-            sys.exit(3)
+    try:
+        find_tool("iverilog")
+        find_tool("vvp")
+    except ToolNotFound as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(3)
 
     results = []
     for asm_path in asm_files:
@@ -149,7 +183,7 @@ def main():
             else:
                 results.append((name, "FAIL", diff))
         except ToolNotFound as e:
-            results.append((name, "ERROR", str(e)))
+            results.append((name, "BLOCKED", str(e)))
 
     print()
     print(f"{'TEST':30s} RESULT")
