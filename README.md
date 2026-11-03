@@ -141,20 +141,18 @@ semantics, and the complete test procedure.
 
 #### Build and test the add-on
 
-Assemble the CPU-level smoke-test program, compile both add-on testbenches, and
-run them with the bundled Icarus Verilog tools:
+From the project folder, run one command to assemble the CPU smoke-test
+program, compile and execute both add-on testbenches, save their GTKWave
+waveforms under `sim\waves\`, and open GTKWave with the integration waveform:
 
 ```powershell
-python dsd8asm.py sim\interrupt_smoke.asm -o sim\interrupt_smoke.hex
-tools\iverilog\app\bin\iverilog.exe -g2012 -s tb_interrupt_controller -o sim\tb_interrupt_controller.vvp tb\tb_interrupt_controller.v rtl\interrupt_controller.v
-tools\iverilog\app\bin\vvp.exe sim\tb_interrupt_controller.vvp
-tools\iverilog\app\bin\iverilog.exe -g2012 -s tb_dsd8_interrupt_top -o sim\tb_dsd8_interrupt_top.vvp rtl\*.v tb\tb_dsd8_interrupt_top.v
-tools\iverilog\app\bin\vvp.exe sim\tb_dsd8_interrupt_top.vvp
+python run_interrupt_tests.py
 ```
 
 The first test covers timers, flags, masking, and priority. The integration
 test runs an assembled program that polls Timer A, updates the LEDs, clears the
-IRQ flag, and halts.
+IRQ flag, and halts. The runner uses bundled Icarus Verilog and GTKWave tools
+if available, or `iverilog`, `vvp`, and `gtkwave` on `PATH`.
 
 ---
 

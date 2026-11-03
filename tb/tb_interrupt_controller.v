@@ -145,4 +145,6 @@ module tb_interrupt_controller;
         $finish;
     end
 
+`include "tb/wave_dump.vh"
+
 endmodule

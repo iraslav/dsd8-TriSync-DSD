@@ -526,22 +526,21 @@ golden reference behavior.
 
 ### 10.3 Test the interrupt add-on
 
-From the project root, assemble the smoke program, then compile and run each
-add-on testbench:
+From the project root, use the included runner to assemble the smoke program,
+compile both add-on testbenches, run them, save waveform and GTKWave view files,
+and open GTKWave with the CPU-level integration waveform:
 
 ```powershell
-python dsd8asm.py sim\interrupt_smoke.asm -o sim\interrupt_smoke.hex
-
-tools\iverilog\app\bin\iverilog.exe -g2012 -s tb_interrupt_controller -o sim\tb_interrupt_controller.vvp tb\tb_interrupt_controller.v rtl\interrupt_controller.v
-tools\iverilog\app\bin\vvp.exe sim\tb_interrupt_controller.vvp
-
-tools\iverilog\app\bin\iverilog.exe -g2012 -s tb_dsd8_interrupt_top -o sim\tb_dsd8_interrupt_top.vvp rtl\*.v tb\tb_dsd8_interrupt_top.v
-tools\iverilog\app\bin\vvp.exe sim\tb_dsd8_interrupt_top.vvp
+python run_interrupt_tests.py
 ```
 
 The standalone test exercises peripheral registers. The CPU-level test checks
 that a real DSD-8 program can configure a timer, poll the flag, write to the
-standard LED port, clear the flag, and halt.
+standard LED port, clear the flag, and halt. The runner automatically uses the
+bundled Icarus Verilog and GTKWave tools if available or
+`iverilog`/`vvp`/`gtkwave` on `PATH`. Waveforms are named
+`sim/waves/GTKwave.vcd` and `sim/waves/GTKwave_interrupt_controller.vcd`, with
+matching `.gtkw` save files.
 
 ### 10.4 Inspect waveforms and interact with the processor
 

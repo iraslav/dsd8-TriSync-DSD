@@ -64,4 +64,6 @@ module tb_dsd8_interrupt_top;
         $finish;
     end
 
+`include "tb/wave_dump.vh"
+
 endmodule
