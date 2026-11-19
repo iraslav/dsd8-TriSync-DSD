@@ -1,253 +1,246 @@
 #!/usr/bin/env python3
-"""
-Master CI and Verification Runner for DSD-8 Processor (scripts/run_all.py)
-Executes all self-checking unit testbenches, the 12,200-vector random ALU test,
-and the complete 40-test Conformance Suite, returning exit code 0 on all pass.
-"""
+"""Master DSD-8 verification runner."""
 
+import argparse
 import os
-import sys
+import pathlib
+import re
+import shutil
 import subprocess
-import glob
-import time
+import sys
 
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-IVERILOG = os.path.join(ROOT_DIR, "tools", "iverilog", "app", "bin", "iverilog.exe")
-VVP = os.path.join(ROOT_DIR, "tools", "iverilog", "app", "bin", "vvp.exe")
-GTKWAVE = os.path.join(ROOT_DIR, "tools", "iverilog", "app", "gtkwave", "bin", "gtkwave.exe")
-RTL_DIR = os.path.join(ROOT_DIR, "rtl")
-TB_DIR = os.path.join(ROOT_DIR, "tb")
-SIM_DIR = os.path.join(ROOT_DIR, "sim")
-TESTS_DIR = os.path.join(SIM_DIR, "tests")
-WAVES_DIR = os.path.join(SIM_DIR, "waves")
+try:
+    from .windows_path import repository_path
+except ImportError:
+    from windows_path import repository_path
 
-
-def fwd(path):
-    """iverilog plusargs read paths best with forward slashes."""
-    return path.replace("\\", "/")
+ROOT_DIR = pathlib.Path(os.path.abspath(__file__)).parent.parent
+SUMMARY_RE = re.compile(
+    r"SUMMARY: PASS=(\d+) FAIL=(\d+) BLOCKED=(\d+) TOTAL=(\d+)"
+)
+PIPELINE_RE = re.compile(
+    r"PIPELINE SUMMARY: PASS=(\d+) FAIL=(\d+) BLOCKED=(\d+) "
+    r"TOTAL=(\d+) DUPLICATES=(\d+)"
+)
 
 
-def gtkw_view_for(tb_name, vcd_path):
-    """Ask run_wave.py for a paired .gtkw view (never fails the regression)."""
+def expected_case_counts(root):
+    unit_count = len([
+        path for path in (root / "tb").glob("tb_*.v")
+        if path.name != "tb_dsd8.v"
+    ])
+    conformance_count = len(list((root / "sim" / "tests").glob("T*.hex")))
+    pipeline_count = len(list((root / "tests" / "conformance").glob("*.asm")))
+    return unit_count, conformance_count, pipeline_count
+
+
+def run_script(root, relative_script):
+    command = [sys.executable, str(root / relative_script)]
     try:
-        import run_wave
-        return run_wave.make_savefile_for(vcd_path, tb_name)
-    except Exception as exc:  # auxiliary nicety only
-        print(f"      (wave view skipped: {exc})")
-        return None
+        result = subprocess.run(
+            command, cwd=root, capture_output=True, text=True
+        )
+    except OSError as exc:
+        return None, f"Could not run {relative_script}: {exc}"
+
+    if result.stdout:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+    if result.stderr:
+        print(result.stderr, file=sys.stderr, end="" if result.stderr.endswith("\n") else "\n")
+    return result, None
 
 
-def run_cmd(cmd, cwd=ROOT_DIR):
-    res = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    return res.returncode, res.stdout, res.stderr
+def summarize_child(result, error, expected_count, expected_pipeline, label):
+    pipeline_counts = {"PASS": 0, "FAIL": 0, "BLOCKED": 0}
+    if error:
+        print(f"{label}: BLOCKED - {error}")
+        pipeline_counts["BLOCKED"] = expected_pipeline
+        return (
+            {"PASS": 0, "FAIL": 0, "BLOCKED": expected_count},
+            pipeline_counts,
+            False,
+        )
 
-def run_unit_tests(with_waves=True):
-    print("=" * 70)
-    print("STEP 1: RUNNING SELF-CHECKING UNIT TESTBENCHES" + ("  (+ auto VCD waves)" if with_waves else ""))
-    print("=" * 70)
+    match = SUMMARY_RE.search(result.stdout)
+    if match is None:
+        detail = f"{label} exited with code {result.returncode} without a test summary"
+        print(f"{label}: BLOCKED - {detail}")
+        pipeline_counts["BLOCKED"] = expected_pipeline
+        return (
+            {"PASS": 0, "FAIL": 0, "BLOCKED": expected_count},
+            pipeline_counts,
+            False,
+        )
 
-    unit_tests = [
-        ("tb_prog_counter.v",   ["prog_counter.v"]),
-        ("tb_register_file.v",  ["register_file.v"]),
-        ("tb_alu.v",            ["alu.v"]),
-        ("tb_flags_reg.v",      ["flags_reg.v"]),
-        ("tb_instr_decoder.v",  ["instr_decoder.v"]),
-        ("tb_data_memory.v",    ["data_memory.v"]),
-        ("tb_control_unit.v",   ["control_unit.v"]),
-        ("tb_io_bus.v",         ["io_bus.v"]),
-        ("tb_alu_random.v",     ["alu.v"]),
-    ]
-
-    unit_passed = 0
-    unit_waves = 0
-    total_units = len(unit_tests)
-    if with_waves:
-        os.makedirs(WAVES_DIR, exist_ok=True)
-
-    for tb_name, req_rtls in unit_tests:
-        tb_path = os.path.join(TB_DIR, tb_name)
-        vvp_out = os.path.join(SIM_DIR, tb_name.replace(".v", ".vvp"))
-        rtl_paths = [os.path.join(RTL_DIR, r) for r in req_rtls]
-
-        # Compile
-        compile_cmd = [IVERILOG, "-g2012", "-o", vvp_out, tb_path] + rtl_paths
-        code, out, err = run_cmd(compile_cmd)
-        if code != 0:
-            print(f"  [COMPILATION ERROR] {tb_name}:\n{err}")
-            continue
-
-        # Run (with automatic VCD waveform capture)
-        sim_cmd = [VVP, vvp_out]
-        if with_waves:
-            vcd_out = os.path.join(WAVES_DIR, tb_name.replace(".v", ".vcd"))
-            sim_cmd.append(f"+VCD={fwd(os.path.relpath(vcd_out, ROOT_DIR))}")
-        code, out, err = run_cmd(sim_cmd)
-        if "PASS" in out and code == 0:
-            print(f"  [PASS] {tb_name:<20}")
-            unit_passed += 1
-            if with_waves and os.path.isfile(vcd_out) and os.path.getsize(vcd_out) > 0:
-                gtkw_view_for(tb_name[:-2], vcd_out)
-                unit_waves += 1
-        else:
-            print(f"  [FAIL] {tb_name:<20}\n{out}\n{err}")
-
-    branch = f"  ({unit_waves} waveform(s) in sim/waves/)" if with_waves else ""
-    print(f"\nUnit Test Summary: {unit_passed}/{total_units} Passed.{branch}\n")
-    return unit_passed == total_units
-
-def run_conformance_suite(with_waves=True):
-    print("=" * 70)
-    print("STEP 2: RUNNING 40-TEST CONFORMANCE SUITE (T01 - T40)" + ("  (+ auto VCD waves)" if with_waves else ""))
-    print("=" * 70)
-
-    # 1. Compile top testbench harness once
-    all_rtls = glob.glob(os.path.join(RTL_DIR, "*.v"))
-    tb_harness = os.path.join(TB_DIR, "tb_dsd8.v")
-    harness_vvp = os.path.join(SIM_DIR, "tb_dsd8.vvp")
-
-    compile_cmd = [IVERILOG, "-g2012", "-o", harness_vvp, tb_harness] + all_rtls
-    code, out, err = run_cmd(compile_cmd)
-    if code != 0:
-        print(f"FATAL: Failed to compile tb_dsd8.v harness:\n{err}")
-        return False
-
-    if with_waves:
-        os.makedirs(WAVES_DIR, exist_ok=True)
-
-    tests = sorted(glob.glob(os.path.join(TESTS_DIR, "T*.hex")))
-    passed_tests = 0
-    passed_waves = 0
-    total_tests = len(tests)
-
-    print(f"{'Test':<8} {'Name':<28} {'Status':<8} {'Cycles':<8} {'Retire':<8}")
-    print("-" * 65)
-
-    descriptions = {
-        "T01": "LDI into each register",
-        "T02": "LDI boundary values",
-        "T03": "MOV between registers",
-        "T04": "LDI flag preservation",
-        "T05": "NOP execution",
-        "T06": "Write-then-read RF",
-        "T07": "Same register ALU ports",
-        "T08": "rd == rs1 == rs2",
-        "T09": "Read unwritten DMEM",
-        "T10": "DMEM Store-then-Load",
-        "T11": "DMEM rs1 addr routing",
-        "T12": "ST [Rx], Rx",
-        "T13": "Walking-ones in DMEM",
-        "T14": "LD flag preservation",
-        "T15": "ADD carry boundary",
-        "T16": "SUB borrow convention",
-        "T17": "Signed overflow V",
-        "T18": "Bitwise logic flags",
-        "T19": "SHL/SHR carry shift",
-        "T20": "SHR logical shift",
-        "T21": "CMP sets flags only",
-        "T22": "Arithmetic right shift",
-        "T23": "JMP forward/backward",
-        "T24": "Branch conditions taken",
-        "T25": "Branch conditions fall-thru",
-        "T26": "Branch loop escape",
-        "T27": "Branch flag preservation",
-        "T28": "Unsigned BCS/BCC ordering",
-        "T29": "Signed BMI ordering",
-        "T30": "256-iteration loop",
-        "T31": "LEDS OUT / SWITCHES IN",
-        "T32": "Unmapped IO port",
-        "T33": "IO / DMEM isolation",
-        "T34": "SLOW_ECHO IO handshake",
-        "T35": "IO flag preservation",
-        "T36": "8-bit Multiply (B.1)",
-        "T37": "Population Count (B.2)",
-        "T38": "Bubble Sort DMEM (B.3)",
-        "T39": "Min/Max block search",
-        "T40": "Polled UART transmit",
+    counts = {
+        "PASS": int(match.group(1)),
+        "FAIL": int(match.group(2)),
+        "BLOCKED": int(match.group(3)),
     }
-
-    for test_hex in tests:
-        test_id = os.path.basename(test_hex).split('.')[0]
-        dut_trace = os.path.join(SIM_DIR, f"{test_id}_dut.trace")
-        gold_trace = os.path.join(TESTS_DIR, f"{test_id}_gold.trace")
-
-        # Run Verilog simulation (with automatic VCD waveform capture)
-        sim_cmd = [
-            VVP, harness_vvp,
-            f"+IMAGE={test_hex.replace('\\', '/')}",
-            f"+TRACE={dut_trace.replace('\\', '/')}"
-        ]
-        if with_waves:
-            vcd_out = os.path.join(WAVES_DIR, f"{test_id}.vcd")
-            sim_cmd.append(f"+VCD={fwd(os.path.relpath(vcd_out, ROOT_DIR))}")
-        code, out, err = run_cmd(sim_cmd)
-
-        # Extract cycle and instruction count
-        cycles = "-"
-        retired = "-"
-        for line in out.splitlines():
-            if "Cycles=" in line and "Instructions=" in line:
-                parts = line.split(',')
-                for p in parts:
-                    if "Cycles=" in p:
-                        cycles = p.split('=')[1].strip()
-                    elif "Instructions=" in p:
-                        retired = p.split('=')[1].strip()
-
-        # Compare traces line-by-line
-        diff = []
-        if os.path.exists(dut_trace) and os.path.exists(gold_trace):
-            with open(dut_trace, 'r') as f1, open(gold_trace, 'r') as f2:
-                lines_dut = [l.strip().upper() for l in f1 if l.strip()]
-                lines_gold = [l.strip().upper() for l in f2 if l.strip()]
-            
-            if lines_dut == lines_gold:
-                status = "PASS"
-                passed_tests += 1
-            else:
-                status = "FAIL"
-                diff = [f"Diff at line {i+1}: DUT={d} vs GOLD={g}" 
-                        for i, (d, g) in enumerate(zip(lines_dut, lines_gold)) if d != g]
-                if not diff and len(lines_dut) != len(lines_gold):
-                    diff = [f"Line count mismatch: DUT has {len(lines_dut)} lines, GOLD has {len(lines_gold)} lines"]
+    reported_total = int(match.group(4))
+    summary_ok = (
+        reported_total == expected_count
+        and reported_total == sum(counts.values())
+    )
+    if not summary_ok:
+        print(
+            f"{label}: FAIL - reported total {reported_total} does not match "
+            f"expected {expected_count} and component counts {sum(counts.values())}"
+        )
+    pipeline_ok = True
+    if expected_pipeline:
+        pipeline_match = PIPELINE_RE.search(result.stdout)
+        if pipeline_match is None:
+            pipeline_counts["BLOCKED"] = expected_pipeline
+            pipeline_ok = False
+            print(f"{label}: BLOCKED - missing pipeline-check summary")
         else:
-            status = "ERROR"
+            pipeline_counts = {
+                "PASS": int(pipeline_match.group(1)),
+                "FAIL": int(pipeline_match.group(2)),
+                "BLOCKED": int(pipeline_match.group(3)),
+            }
+            pipeline_ok = (
+                int(pipeline_match.group(4)) == expected_pipeline
+                and sum(pipeline_counts.values()) == expected_pipeline
+            )
+    exit_ok = result.returncode == 0
+    if summary_ok and not exit_ok:
+        print(f"{label}: FAIL - runner exited with code {result.returncode}")
+    return counts, pipeline_counts, summary_ok and pipeline_ok and exit_ok
 
-        desc = descriptions.get(test_id, "Conformance test")
-        print(f"{test_id:<8} {desc:<28} {status:<8} {cycles:<8} {retired:<8}")
-        if status == "PASS" and with_waves and os.path.isfile(vcd_out) and os.path.getsize(vcd_out) > 0:
-            gtkw_view_for("tb_dsd8", vcd_out)
-            passed_waves += 1
-        if status == "FAIL" and diff:
-            print(f"    --> {diff[0]}")
 
-    print("-" * 65)
-    print(f"Conformance Suite Score: {passed_tests}/{total_tests} ({passed_tests/total_tests*100:.1f}%)")
-    if with_waves:
-        print(f"Waveforms: {passed_waves}/{total_tests} VCD + .gtkw views in sim/waves/")
-    return passed_tests == total_tests
+def lint(root):
+    command = ["make", "lint"]
+    try:
+        result = subprocess.run(
+            command, cwd=root, capture_output=True, text=True
+        )
+    except OSError as exc:
+        print(f"LINT: BLOCKED - could not run make lint: {exc}")
+        return "BLOCKED", False
+
+    if result.stdout:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+    if result.stderr:
+        print(result.stderr, file=sys.stderr, end="" if result.stderr.endswith("\n") else "\n")
+    if result.returncode == 0:
+        return "PASS", True
+    return "FAIL", False
+
+
+def lint_only(root):
+    rtl_files = sorted((root / "rtl").glob("*.v"))
+    if not rtl_files:
+        print("LINT: BLOCKED - no RTL Verilog files found")
+        return 1
+
+    bundled = root / "tools" / "iverilog" / "app" / "bin" / "iverilog.exe"
+    compiler = str(bundled) if bundled.is_file() else shutil.which("iverilog")
+    if compiler is None:
+        print("LINT: BLOCKED - Icarus Verilog is not installed or not on PATH")
+        return 1
+
+    result = subprocess.run(
+        [compiler, "-g2012", "-t", "null", *[str(path) for path in rtl_files]],
+        cwd=root, capture_output=True, text=True,
+    )
+    if result.stdout:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+    if result.stderr:
+        print(result.stderr, file=sys.stderr, end="" if result.stderr.endswith("\n") else "\n")
+    if result.returncode == 0:
+        print("LINT: PASS")
+        return 0
+    print(f"LINT: FAIL (iverilog exit code {result.returncode})")
+    return 1
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--unit-only", action="store_true", help="run unit and integration benches")
+    mode.add_argument("--conformance-only", action="store_true", help="run baseline and sample conformance")
+    mode.add_argument("--lint-only", action="store_true", help="run the RTL syntax check")
+    return parser.parse_args()
+
 
 def main():
-    start_time = time.time()
-    with_waves = "--no-waves" not in sys.argv   # waves are auto by default
-    unit_ok = run_unit_tests(with_waves=with_waves)
-    conf_ok = run_conformance_suite(with_waves=with_waves)
-    elapsed = time.time() - start_time
+    args = parse_args()
+    try:
+        with repository_path(ROOT_DIR) as root:
+            if args.lint_only:
+                return lint_only(root)
 
-    print("=" * 70)
-    print(f"REGRESSION COMPLETE IN {elapsed:.2f} SECONDS")
-    if with_waves:
-        wave_count = len(glob.glob(os.path.join(WAVES_DIR, "*.vcd")))
-        print(f"WAVEFORMS AUTO-CREATED: {wave_count} VCD (+ matching .gtkw views)")
-        print(f"  -> folder: sim{os.sep}waves")
-        print(f'  -> open any: "{GTKWAVE}" sim/waves/T36.vcd')
-    if unit_ok and conf_ok:
-        print("ALL TESTS PASSED! 100% SPECIFICATION CONFORMANCE ACHIEVED!")
-        print("=" * 70)
-        sys.exit(0)
-    else:
-        print("REGRESSION FAILED!")
-        print("=" * 70)
-        sys.exit(1)
+            unit_expected, conformance_expected, pipeline_expected = expected_case_counts(root)
+            unit_counts = {"PASS": 0, "FAIL": 0, "BLOCKED": 0}
+            conformance_counts = {"PASS": 0, "FAIL": 0, "BLOCKED": 0}
+            pipeline_counts = {"PASS": 0, "FAIL": 0, "BLOCKED": 0}
+            runners_ok = True
+
+            if not args.conformance_only:
+                print("=== Unit and integration testbenches ===")
+                result, error = run_script(root, pathlib.Path("scripts/run_unit_tests.py"))
+                unit_counts, _, ok = summarize_child(
+                    result, error, unit_expected, 0, "Unit tests"
+                )
+                runners_ok &= ok
+
+            if not args.unit_only:
+                print("=== Baseline and additional conformance tests ===")
+                result, error = run_script(root, pathlib.Path("scripts/run_conformance.py"))
+                conformance_counts, pipeline_counts, ok = summarize_child(
+                    result, error, conformance_expected, pipeline_expected,
+                    "Conformance tests"
+                )
+                runners_ok &= ok
+
+            test_counts = {
+                name: unit_counts[name] + conformance_counts[name]
+                for name in ("PASS", "FAIL", "BLOCKED")
+            }
+            test_total = sum(test_counts.values())
+            if args.unit_only or args.conformance_only:
+                lint_status, lint_ok = "NOT RUN", True
+            else:
+                print("=== RTL lint ===")
+                lint_status, lint_ok = lint(root)
+
+            print()
+            print(
+                f"TEST CASES: {test_total}  "
+                f"PASS: {test_counts['PASS']}  "
+                f"FAIL: {test_counts['FAIL']}  "
+                f"BLOCKED: {test_counts['BLOCKED']}"
+            )
+            if not args.unit_only:
+                print(
+                    f"ADDITIONAL PIPELINE CHECKS: "
+                    f"PASS: {pipeline_counts['PASS']}  "
+                    f"FAIL: {pipeline_counts['FAIL']}  "
+                    f"BLOCKED: {pipeline_counts['BLOCKED']} "
+                    "(sample programs overlapping baseline cases are not double-counted)"
+                )
+            print(f"LINT: {lint_status}")
+            passed = (
+                runners_ok
+                and lint_ok
+                and test_counts["FAIL"] == 0
+                and test_counts["BLOCKED"] == 0
+                and pipeline_counts["FAIL"] == 0
+                and pipeline_counts["BLOCKED"] == 0
+            )
+            print(f"OVERALL: {'PASS' if passed else 'FAIL'}")
+            print(
+                f"SUMMARY: PASS={test_counts['PASS']} "
+                f"FAIL={test_counts['FAIL']} "
+                f"BLOCKED={test_counts['BLOCKED']} TOTAL={test_total}"
+            )
+            return 0 if passed else 1
+    except OSError as exc:
+        print(f"BLOCKED: {exc}", file=sys.stderr)
+        return 1
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
